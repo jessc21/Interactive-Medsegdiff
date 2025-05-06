@@ -42,8 +42,7 @@ def visualize(img):
     return normalized_img
 
 
-def main():
-    args = create_argparser().parse_args()
+def load_data(args):
     dist_util.setup_dist(args)
     logger.configure(dir = args.out_dir)
 
@@ -57,7 +56,7 @@ def main():
         tran_list = [transforms.Resize((args.image_size,args.image_size)),]
         transform_test = transforms.Compose(tran_list)
 
-        ds = BRATSDataset3D(args.data_dir,transform_test)
+        ds = BRATSDataset3D(args.data_dir,transform_test, test_flag=True)
         args.in_ch = 5
     else:
         tran_list = [transforms.Resize((args.image_size,args.image_size)), transforms.ToTensor()]
@@ -69,16 +68,16 @@ def main():
     datal = th.utils.data.DataLoader(
         ds,
         batch_size=args.batch_size,
-        shuffle=True)
-    data = iter(datal)
+        shuffle=False)
+    return datal
 
+def create_model(args):
     logger.log("creating model and diffusion...")
 
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
     all_images = []
-
 
     state_dict = dist_util.load_state_dict(args.model_path, map_location="cpu")
     from collections import OrderedDict
@@ -97,81 +96,107 @@ def main():
     if args.use_fp16:
         model.convert_to_fp16()
     model.eval()
-    for _ in range(len(data)):
-        b, m, path = next(data)  #should return an image from the dataloader "data"
-        c = th.randn_like(b[:, :1, ...])
-        img = th.cat((b, c), dim=1)     #add a noise channel$
-        if args.data_name == 'ISIC':
-            slice_ID=path[0].split("_")[-1].split('.')[0]
-        elif args.data_name == 'BRATS':
-            # slice_ID=path[0].split("_")[2] + "_" + path[0].split("_")[4]
-            slice_ID=path[0].split("_")[-3] + "_" + path[0].split("slice")[-1].split('.nii')[0]
 
-        logger.log("sampling...")
+    return model, diffusion
 
-        start = th.cuda.Event(enable_timing=True)
-        end = th.cuda.Event(enable_timing=True)
-        enslist = []
 
-        for i in range(args.num_ensemble):  #this is for the generation of an ensemble of 5 masks.
-            model_kwargs = {}
-            start.record()
-            sample_fn = (
-                diffusion.p_sample_loop_known if not args.use_ddim else diffusion.ddim_sample_loop_known
-            )
-            sample, x_noisy, org, cal, cal_out = sample_fn(
-                model,
-                (args.batch_size, 3, args.image_size, args.image_size), img,
-                step = args.diffusion_steps,
-                clip_denoised=args.clip_denoised,
-                model_kwargs=model_kwargs,
-            )
+def sample_once(slice_idx, attempt_num, args, datal, model, diffusion):
+    # ---- Skip to the desired slice
+    data = iter(datal)
+    for _ in range(slice_idx):
+        next(data)
+    b, m, path = next(data)
+    
+    # ---- Rest of the code stays mostly the same:
+    c = th.randn_like(b[:, :1, ...]) #add a noise channel, make the sampling result different each time
+    img = th.cat((b, c), dim=1)     #add a noise channel$
+    print("Batch data min/max:", b.min(), b.max())
+    print("Input tensor shape:", img.shape)
+    if args.data_name == 'ISIC':
+        slice_ID=path[0].split("_")[-1].split('.')[0]
+    elif args.data_name == 'BRATS':
+        # slice_ID=path[0].split("_")[2] + "_" + path[0].split("_")[4]
+        slice_ID=os.path.basename(path[0]).replace(".nii.gz","")
 
-            end.record()
-            th.cuda.synchronize()
-            print('time for 1 sample', start.elapsed_time(end))  #time measurement for the generation of 1 sample
+    logger.log("sampling...")
 
-            co = th.tensor(cal_out)
-            if args.version == 'new':
-                enslist.append(sample[:,-1,:,:])
-            else:
-                enslist.append(co)
+    start = th.cuda.Event(enable_timing=True)
+    end = th.cuda.Event(enable_timing=True)
+    enslist = []
 
-            if args.debug:
-                # print('sample size is',sample.size())
-                # print('org size is',org.size())
-                # print('cal size is',cal.size())
-                if args.data_name == 'ISIC':
-                    # s = th.tensor(sample)[:,-1,:,:].unsqueeze(1).repeat(1, 3, 1, 1)
-                    o = th.tensor(org)[:,:-1,:,:]
-                    c = th.tensor(cal).repeat(1, 3, 1, 1)
-                    # co = co.repeat(1, 3, 1, 1)
+    for i in range(args.num_ensemble):  #this is for the generation of an ensemble of 5 masks.
+        model_kwargs = {}
+        start.record()
+        sample_fn = (
+            diffusion.p_sample_loop_known if not args.use_ddim else diffusion.ddim_sample_loop_known
+        )
+        sample, x_noisy, org, cal, cal_out = sample_fn(
+            model,
+            (args.batch_size, 3, args.image_size, args.image_size), img,
+            step = args.diffusion_steps,
+            clip_denoised=args.clip_denoised,
+            model_kwargs=model_kwargs,
+        )
 
-                    s = sample[:,-1,:,:]
-                    b,h,w = s.size()
-                    ss = s.clone()
-                    ss = ss.view(s.size(0), -1)
-                    ss -= ss.min(1, keepdim=True)[0]
-                    ss /= ss.max(1, keepdim=True)[0]
-                    ss = ss.view(b, h, w)
-                    ss = ss.unsqueeze(1).repeat(1, 3, 1, 1)
+        end.record()
+        th.cuda.synchronize()
+        print('time for 1 sample', start.elapsed_time(end))  #time measurement for the generation of 1 sample
 
-                    tup = (ss,o,c)
-                elif args.data_name == 'BRATS':
-                    s = th.tensor(sample)[:,-1,:,:].unsqueeze(1)
-                    m = th.tensor(m.to(device = 'cuda:0'))[:,0,:,:].unsqueeze(1)
-                    o1 = th.tensor(org)[:,0,:,:].unsqueeze(1)
-                    o2 = th.tensor(org)[:,1,:,:].unsqueeze(1)
-                    o3 = th.tensor(org)[:,2,:,:].unsqueeze(1)
-                    o4 = th.tensor(org)[:,3,:,:].unsqueeze(1)
-                    c = th.tensor(cal)
+        co = th.tensor(cal_out)
+        if args.version == 'new':
+            enslist.append(sample[:,-1,:,:])
+        else:
+            enslist.append(co)
 
-                    tup = (o1/o1.max(),o2/o2.max(),o3/o3.max(),o4/o4.max(),m,s,c,co)
+        if args.debug:
+            # print('sample size is',sample.size())
+            # print('org size is',org.size())
+            # print('cal size is',cal.size())
+            if args.data_name == 'ISIC':
+                # s = th.tensor(sample)[:,-1,:,:].unsqueeze(1).repeat(1, 3, 1, 1)
+                o = th.tensor(org)[:,:-1,:,:]
+                c = th.tensor(cal).repeat(1, 3, 1, 1)
+                # co = co.repeat(1, 3, 1, 1)
 
-                compose = th.cat(tup,0)
-                vutils.save_image(compose, fp = os.path.join(args.out_dir, str(slice_ID)+'_output'+str(i)+".jpg"), nrow = 1, padding = 10)
-        ensres = staple(th.stack(enslist,dim=0)).squeeze(0)
-        vutils.save_image(ensres, fp = os.path.join(args.out_dir, str(slice_ID)+'_output_ens'+".jpg"), nrow = 1, padding = 10)
+                s = sample[:,-1,:,:]
+                b,h,w = s.size()
+                ss = s.clone()
+                ss = ss.view(s.size(0), -1)
+                ss -= ss.min(1, keepdim=True)[0]
+                ss /= ss.max(1, keepdim=True)[0]
+                ss = ss.view(b, h, w)
+                ss = ss.unsqueeze(1).repeat(1, 3, 1, 1)
+
+                tup = (ss,o,c)
+            elif args.data_name == 'BRATS':
+                s = th.tensor(sample)[:,-1,:,:].unsqueeze(1)
+                m = th.tensor(m.to(device = 'cuda:0'))[:,0,:,:].unsqueeze(1)
+                o1 = th.tensor(org)[:,0,:,:].unsqueeze(1)
+                o2 = th.tensor(org)[:,1,:,:].unsqueeze(1)
+                o3 = th.tensor(org)[:,2,:,:].unsqueeze(1)
+                o4 = th.tensor(org)[:,3,:,:].unsqueeze(1)
+                c = th.tensor(cal)
+
+                tup = (o1/o1.max(),o2/o2.max(),o3/o3.max(),o4/o4.max(),m,s,c,co)
+
+            compose = th.cat(tup,0)
+            vutils.save_image(compose, fp = os.path.join(args.out_dir, str(slice_ID)+'_'+str(attempt_num)+'_output'+str(i)+".jpg"), nrow = 1, padding = 10)
+    ensres = staple(th.stack(enslist,dim=0)).squeeze(0)
+    vutils.save_image(ensres, fp = os.path.join(args.out_dir, str(slice_ID)+'_'+str(attempt_num)+'_output_ens'+".jpg"), nrow = 1, padding = 10)
+    th.save(ensres, os.path.join(args.out_dir, f"{slice_ID}_{attempt_num}_output_ens.pt"))
+    output_path = os.path.join(args.out_dir, f"{slice_ID}_{attempt_num}_output_ens.pt")
+
+    return output_path  # wherever you saved the image
+
+
+
+def main():
+    args = create_argparser().parse_args()
+    datal = load_data(args)
+    model, diffusion = create_model(args)
+
+    output_path = sample_once(0, 1, args, datal, model, diffusion)  # Change the slice index as needed
+    print(f"Output saved at: {output_path}")
 
 def create_argparser():
     defaults = dict(

@@ -1,0 +1,12 @@
+/guided_diffusion/__pycache__
+/scripts/__pycache__
+/BraTSdata
+/results
+/sampling_output
+/new_output
+/samples_val_010000
+/samples_val_065000
+/.git
+/.github
+medseg_out*
+/notused_output

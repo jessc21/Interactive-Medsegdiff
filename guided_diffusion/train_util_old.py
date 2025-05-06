@@ -12,6 +12,11 @@ from . import dist_util, logger
 from .fp16_util import MixedPrecisionTrainer
 from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
+# from visdom import Visdom
+# viz = Visdom(port=8850)
+# loss_window = viz.line( Y=th.zeros((1)).cpu(), X=th.zeros((1)).cpu(), opts=dict(xlabel='epoch', ylabel='Loss', title='loss'))
+# grad_window = viz.line(Y=th.zeros((1)).cpu(), X=th.zeros((1)).cpu(),
+#                            opts=dict(xlabel='step', ylabel='amplitude', title='gradient'))
 
 
 # For ImageNet experiments, this was a good default value.
@@ -46,10 +51,8 @@ class TrainLoop:
         schedule_sampler=None,
         weight_decay=0.0,
         lr_anneal_steps=0,
-        writer=None,
     ):
         self.model = model
-        self.writer = writer
         self.dataloader=dataloader
         self.classifier = classifier
         self.diffusion = diffusion
@@ -164,49 +167,38 @@ class TrainLoop:
             self.opt.load_state_dict(state_dict)
 
     def run_loop(self):
-      i = 0
-      data_iter = iter(self.dataloader)
-      while (
-          not self.lr_anneal_steps
-          or self.step + self.resume_step < self.lr_anneal_steps
-      ):
-          try:
-              batch, cond, name = next(data_iter)
-          except StopIteration:
-              # Reinitialize data loader if dataset ends
-              data_iter = iter(self.dataloader)
-              batch, cond, name = next(data_iter)
+        i = 0
+        data_iter = iter(self.dataloader)
+        while (
+            not self.lr_anneal_steps
+            or self.step + self.resume_step < self.lr_anneal_steps
+        ):
 
-          # Run one training step
-          loss = self.run_step(batch, cond)
 
-          # Log metrics to TensorBoard
-          if self.writer and self.step % self.log_interval == 0:
-              # Reduce loss tensor to a scalar (e.g., take the mean)
-              scalar_loss = loss.mean().item()  # Calculate the mean of the loss tensor
-              self.writer.add_scalar("Loss/Train", scalar_loss, self.step)
-              print(f"Step: {self.step}, Loss: {scalar_loss}")
+            try:
+                    batch, cond, name = next(data_iter)
+            except StopIteration:
+                    # StopIteration is thrown if dataset ends
+                    # reinitialize data loader
+                    data_iter = iter(self.dataloader)
+                    batch, cond, name = next(data_iter)
 
-          i += 1
+            self.run_step(batch, cond)
 
-          # Log to standard logger
-          if self.step % self.log_interval == 0:
-              logger.dumpkvs()
-
-          # Save model checkpoints
-          if self.step % self.save_interval == 0:
-              self.save()
-
-              # Run for a finite amount of time in integration tests
-              if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
-                  return
-
-          self.step += 1
-
-      # Save the last checkpoint if it wasn't already saved
-      if (self.step - 1) % self.save_interval != 0:
-          self.save()
-
+           
+            i += 1
+          
+            if self.step % self.log_interval == 0:
+                logger.dumpkvs()
+            if self.step % self.save_interval == 0:
+                self.save()
+                # Run for a finite amount of time in integration tests.
+                if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
+                    return
+            self.step += 1
+        # Save the last checkpoint if it wasn't already saved.
+        if (self.step - 1) % self.save_interval != 0:
+            self.save()
 
     def run_step(self, batch, cond):
         batch=th.cat((batch, cond), dim=1)
@@ -353,4 +345,3 @@ def log_loss_dict(diffusion, ts, losses):
         for sub_t, sub_loss in zip(ts.cpu().numpy(), values.detach().cpu().numpy()):
             quartile = int(4 * sub_t / diffusion.num_timesteps)
             logger.logkv_mean(f"{key}_q{quartile}", sub_loss)
-
