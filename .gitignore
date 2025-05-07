@@ -10,3 +10,7 @@
 /.github
 medseg_out*
 /notused_output
+/output
+/interaction_phase1_output
+/interaction_phase2_output
+/interaction_phase3_output

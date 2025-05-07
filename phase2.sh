@@ -1,0 +1,19 @@
+python interactive/ensemble_selection.py \
+    --data_name BRATS  \
+    --data_dir C:/Users/26364/Documents/IC/IC_Y4/FYP/MedSegDiff/BraTSdata/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData \
+    --out_dir C:/Users/26364/Documents/IC/IC_Y4/FYP/MedSegDiff/interaction_phase2_output \
+    --model_path C:/Users/26364/Documents/IC/IC_Y4/FYP/MedSegDiff/output/emasavedmodel_0.9999_065000.pt \
+    --image_size 256  \
+    --num_channels 128 \
+    --class_cond False  \
+    --num_res_blocks 2  \
+    --num_heads 1  \
+    --learn_sigma True  \
+    --use_scale_shift_norm False  \
+    --attention_resolutions 16  \
+    --diffusion_steps 50 \
+    --noise_schedule linear  \
+    --rescale_learned_sigmas False  \
+    --rescale_timesteps False  \
+    --dpm_solver True  \
+    --num_ensemble 5
