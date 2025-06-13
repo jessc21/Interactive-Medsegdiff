@@ -79,7 +79,7 @@ def main(slice_idx):
     # ---- Load candidate masks
     masks = []
     output_paths = []
-    num_candidates = 1
+    num_candidates = 3
     for i in range(num_candidates):
         output_path = sample_once(int(slice_idx), i, args, datal, model, diffusion)
         mask = load_pt_as_np(output_path)
@@ -214,56 +214,6 @@ def main(slice_idx):
         worker.finished.connect(update_viewer)
 
         thread.start()
-
-
-    # def run_next_slice():
-    #     nonlocal slice_idx
-    #     slice_idx += 155  # Increment by 155 for next slice
-
-    #     # msg = QMessageBox()
-    #     # msg.setIcon(QMessageBox.Information)
-    #     # msg.setText(f"Sampling for slice {slice_idx}...")
-    #     # msg.setWindowTitle("Sampling")
-    #     # msg.setStandardButtons(QMessageBox.Ok)
-    #     # msg.show()  # Non-blocking
-    #     viewer.status = f"Sampling for slice {slice_idx}..."
-    #     QApplication.processEvents()
-
-    #     # Clear previous mask layers
-    #     for name in layer_names:
-    #         if name in viewer.layers:
-    #             viewer.layers.remove(name)
-
-    #     # Run sampling for next slice
-    #     masks.clear()
-    #     output_paths.clear()
-
-    #     for i in range(num_candidates):
-    #         output_path = sample_once(slice_idx, i, args, datal, model, diffusion)
-    #         mask = load_pt_as_np(output_path)
-    #         masks.append(mask)
-    #         output_paths.append(output_path)
-
-    #     # Update original slice
-    #     folder, filename, slice_id = parse_output_path(output_paths[0])
-    #     original = nib.load(
-    #         f"./BraTSdata/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/{folder}/{filename}.nii.gz"
-    #     ).get_fdata()
-    #     original = np.moveaxis(original, -1, 0)
-    #     viewer.layers["Original Slice"].data = original[slice_id]
-
-    #     # Add new masks
-    #     for idx, mask in enumerate(masks):
-    #         layer = viewer.add_image(
-    #             mask,
-    #             name=f"Candidate Mask {idx}",
-    #             opacity=0.15,
-    #             colormap=colors[idx % len(colors)],
-    #             blending="additive"
-    #         )
-    #         layer_names.append(layer.name)
-
-    #     viewer.status = "Sampling completed."
 
     instruction = QLabel("Select a mask layer and click 'Save Selected Mask' to confirm your choice.")
     instruction.setWordWrap(True)

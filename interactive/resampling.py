@@ -2,7 +2,7 @@
 import os
 import shutil
 import sys
-sys.path.append('/vol/bitbucket/yc3721/fyp/MedSegDiff')
+sys.path.append(".")
 from scripts.segmentation_sample import sample_once, create_argparser, create_model, load_data
 
 def user_feedback_loop(slice_idx, max_attempts=5):

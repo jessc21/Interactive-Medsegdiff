@@ -5,7 +5,7 @@ import numpy as np
 import skimage.transform
 
 # For .pt file (assuming tensor or array saved)
-data_pt = torch.load('BraTS-GLI-00474-001-t2w_slice131.nii_1_output_ens.pt', map_location=torch.device('cpu'))
+data_pt = torch.load('BraTS-GLI-00001-000-t2w_slice80.nii_0_output_ens.pt', map_location=torch.device('cpu'))
 if isinstance(data_pt, torch.Tensor):
     array_pt = data_pt.cpu().numpy()
     array_pt = skimage.transform.resize(array_pt, (1, 240, 240), preserve_range=True, anti_aliasing=True)
@@ -44,8 +44,8 @@ print("array_nii3:",array_nii4.shape, array_nii4.min(), array_nii4.max())
 viewer = napari.Viewer()
 viewer.add_image(array_pt, name='PT Data')
 #viewer.add_image(array_nii, name='00591-000-seg.nii.gz')
-viewer.add_image(array_nii2[131], name='00474-001-t2w.nii.gz')
-viewer.add_image(array_nii3, name='01771-000-t1c.nii.gz')
+#viewer.add_image(array_nii2[131], name='00474-001-t2w.nii.gz')
+#viewer.add_image(array_nii3, name='01771-000-t1c.nii.gz')
 #viewer.add_image(array_nii4, name='01705-000-t2w.nii.gz')
 
 napari.run()

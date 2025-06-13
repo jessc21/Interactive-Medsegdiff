@@ -64,7 +64,6 @@ def parse_output_path(output_path):
     return folder, filename_part, slice_id
 
 
-
 def main(slice_idx):
     worker = None
     thread = None
@@ -79,7 +78,7 @@ def main(slice_idx):
     # ---- Load candidate masks
     masks = []
     output_paths = []
-    num_candidates = 3
+    num_candidates = 2
     for i in range(num_candidates):
         output_path = sample_once(int(slice_idx), i, args, datal, model, diffusion)
         mask = load_pt_as_np(output_path)
@@ -102,7 +101,7 @@ def main(slice_idx):
         layer = viewer.add_image(
             mask,
             name=f"Candidate Mask {idx}",
-            opacity=0.15,
+            opacity=0.40,
             colormap=colors[idx % len(colors)],
             blending="additive"
         )
