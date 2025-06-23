@@ -1,4 +1,4 @@
-# Interactive Medical Image Segmentation using Diffusion Models
+# Interactive Medical Image Segmentation via User-Defined Contour Adjustment
 
 This project presents an interactive segmentation pipeline for medical images, combining a latent diffusion-based segmentation backbone with user-driven refinement modules. The system supports human-in-the-loop decision-making via multi-sample mask selection, manual contour editing (BEAS), and brush-based corrections (Graph Cut), all through an intuitive Napari interface.
 
