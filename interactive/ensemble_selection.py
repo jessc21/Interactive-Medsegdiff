@@ -51,8 +51,8 @@ def load_pt_as_np(path):
     mask = th.load(os.path.join('interaction_phase2_output', path), map_location=th.device('cpu'))
     if isinstance(mask, th.Tensor):
         mask = mask.cpu().numpy()
-    mask = skimage.transform.resize(mask, (240, 240), preserve_range=True, anti_aliasing=True)
-    mask = (mask - mask.min()) / (mask.max() - mask.min())
+    #mask = skimage.transform.resize(mask, (240, 240), preserve_range=True, anti_aliasing=True)
+    #mask = (mask - mask.min()) / (mask.max() - mask.min())
     return mask
 
 def parse_output_path(output_path):
@@ -79,10 +79,11 @@ def main(slice_idx):
     # ---- Load candidate masks
     masks = []
     output_paths = []
-    num_candidates = 3
+    num_candidates = 1
     for i in range(num_candidates):
         output_path = sample_once(int(slice_idx), i, args, datal, model, diffusion)
         mask = load_pt_as_np(output_path)
+        print(f"Loaded mask {i} from {output_path}, shape: {mask.shape}, min: {mask.min()}, max: {mask.max()}")
         masks.append(mask)
         output_paths.append(output_path)
 
@@ -91,6 +92,7 @@ def main(slice_idx):
     nii = nib.load(f"./BraTSdata/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/{folder}/{filename}.nii.gz")
     original = nii.get_fdata()
     original = np.moveaxis(original, -1, 0)
+    print(f"Original shape: {original.shape}, slice_id: {slice_id}")
 
     viewer = napari.Viewer()
     viewer.add_image(original[slice_id], name="Original Slice")

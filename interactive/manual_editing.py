@@ -1,243 +1,144 @@
-# phase 3 code
-import napari
-import torch as th
+# phase2 manual editing BEAS code
 import numpy as np
-import nibabel as nib
-import os
-import shutil
-import sys
+import torch
 import skimage.transform
+from skimage import morphology
+from skimage.measure import find_contours
+from scipy.interpolate import BSpline
+from scipy.ndimage import center_of_mass, binary_fill_holes
+from scipy.optimize import minimize
 from qtpy.QtWidgets import QPushButton
-from qtpy.QtWidgets import QMessageBox
-from qtpy.QtWidgets import QLabel
-from qtpy.QtWidgets import QApplication
-from qtpy.QtCore import QThread, Signal, QObject
-import csv
-import datetime
-sys.path.append('C:/Users/26364/Documents/IC/IC_Y4/FYP/MedSegDiff/')
-from scripts.segmentation_sample import sample_once, create_argparser, create_model, load_data
+import napari
+import nibabel as nib
+from scipy.ndimage import binary_fill_holes
+import os
+from skimage.morphology import binary_erosion, disk
 
-class SamplingWorker(QObject):
-    finished = Signal(list, list, int, np.ndarray)  # masks, output_paths, slice_id, original_slice
-
-    def __init__(self, slice_idx, num_candidates, args, datal, model, diffusion):
-        super().__init__()
-        self.slice_idx = slice_idx
-        self.num_candidates = num_candidates
-        self.args = args
-        self.datal = datal
-        self.model = model
-        self.diffusion = diffusion
-
-    def run(self):
-        masks = []
-        output_paths = []
-
-        for i in range(self.num_candidates):
-            output_path = sample_once(self.slice_idx, i, self.args, self.datal, self.model, self.diffusion)
-            mask = load_pt_as_np(output_path)
-            masks.append(mask)
-            output_paths.append(output_path)
-
-        folder, filename, slice_id = parse_output_path(output_paths[0])
-        original = nib.load(
-            f"./BraTSdata/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/{folder}/{filename}.nii.gz"
-        ).get_fdata()
-        original = np.moveaxis(original, -1, 0)
-
-        self.finished.emit(masks, output_paths, slice_id, original)
-
-def load_pt_as_np(path):
-    mask = th.load(os.path.join('interaction_phase2_output', path), map_location=th.device('cpu'))
-    if isinstance(mask, th.Tensor):
-        mask = mask.cpu().numpy()
-    mask = skimage.transform.resize(mask, (240, 240), preserve_range=True, anti_aliasing=True)
-    mask = (mask - mask.min()) / (mask.max() - mask.min())
-    return mask
-
-def parse_output_path(output_path):
-    filename = os.path.basename(output_path)
-    base = filename.split('_output')[0]
-    filename_part, slice_part = base.split('_slice')
-    slice_id = int(slice_part.split('.')[0])
-    folder = '-'.join(filename_part.split('-')[:4])
-    return folder, filename_part, slice_id
+# Load the corresponding original T2w slice (adjust path accordingly)
+nii = nib.load("BraTS-GLI-00001-000-t2w.nii.gz")
+original_volume = nii.get_fdata()
+original_volume = np.moveaxis(original_volume, -1, 0)  # (H, W, D) → (D, H, W)
+original_slice = skimage.transform.resize(original_volume[80], (240, 240), preserve_range=True, anti_aliasing=True)
+original_slice = (original_slice - original_slice.min()) / (original_slice.max() - original_slice.min())
 
 
-def main(slice_idx):
-    worker = None
-    thread = None
+# ---------- Load and preprocess data ----------
+data_pt = torch.load("BraTS-GLI-00001-000-t2w_slice80.nii_0_output_ens.pt", map_location="cpu")
+array_pt = data_pt.numpy() if isinstance(data_pt, torch.Tensor) else np.array(data_pt)
+if array_pt.ndim == 3 and array_pt.shape[0] == 1:
+    array_pt = array_pt[0]
+array_pt = skimage.transform.resize(array_pt, (240, 240), preserve_range=True, anti_aliasing=True)
+array_pt = (array_pt - array_pt.min()) / (array_pt.max() - array_pt.min())
 
-    # ---- Load model and data
-    args = create_argparser().parse_args()
-    datal = load_data(args)
-    model, diffusion = create_model(args)
-    slice_idx = int(slice_idx)
+# Threshold and denoise
+binary = array_pt > 0.13
+cleaned = binary_erosion(binary, disk(2))
+mask = morphology.remove_small_objects(cleaned, min_size=200)
 
+# Get center of mass
+cy, cx = center_of_mass(mask)
 
-    # ---- Load candidate masks
-    masks = []
-    output_paths = []
-    num_candidates = 2
-    for i in range(num_candidates):
-        output_path = sample_once(int(slice_idx), i, args, datal, model, diffusion)
-        mask = load_pt_as_np(output_path)
-        masks.append(mask)
-        output_paths.append(output_path)
+# Get raw contour
+# contour = find_contours(mask, 0.5)[0]
+# angles = np.arctan2(contour[:, 0] - cy, contour[:, 1] - cx)
+# radii = np.sqrt((contour[:, 0] - cy) ** 2 + (contour[:, 1] - cx) ** 2)
 
-    folder, filename, slice_id = parse_output_path(output_path)
+contour = find_contours(mask, 0.5)[0]
+if not np.allclose(contour[0], contour[-1]):
+    contour = np.vstack([contour, contour[0]])
 
-    nii = nib.load(f"./BraTSdata/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/{folder}/{filename}.nii.gz")
-    original = nii.get_fdata()
-    original = np.moveaxis(original, -1, 0)
+dx = contour[:, 1] - cx
+dy = contour[:, 0] - cy
+angles = np.arctan2(dy, dx)
+angles = np.unwrap(angles)  # 避免跨越 π 跳跃
+radii = np.sqrt(dx**2 + dy**2)
 
-    viewer = napari.Viewer()
-    viewer.add_image(original[slice_id], name="Original Slice")
+# sorted_idx = np.argsort(angles)
+# angles_sorted = angles[sorted_idx]
+# radii_sorted = radii[sorted_idx]
 
-    colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
-    layer_names = []
+# B-spline setup
+num_knots = 30
+# theta_knots = np.linspace(-np.pi, np.pi, num_knots, endpoint=False)
+# r_samples = np.interp(theta_knots, angles_sorted, radii_sorted)
+# 插值构造初始样条点
+theta_knots = np.linspace(angles.min(), angles.max(), num_knots, endpoint=False)
+r_samples = np.interp(theta_knots, angles, radii)
+r_ext = np.concatenate([r_samples[-3:], r_samples, r_samples[:3]])
+t = np.concatenate([theta_knots[-3:] - 2 * np.pi, theta_knots, theta_knots[:3] + 2 * np.pi])
+k = 3
 
-    for idx, mask in enumerate(masks):
-        layer = viewer.add_image(
-            mask,
-            name=f"Candidate Mask {idx}",
-            opacity=0.40,
-            colormap=colors[idx % len(colors)],
-            blending="additive"
-        )
-        layer_names.append(layer.name)
+def circular_second_diff_penalty(c):
+    return np.sum((np.roll(c, -1) - 2 * c + np.roll(c, 1)) ** 2)
 
-    # ------ BUTTON LOGIC ---------
-    def save_selected_mask():
-        selected_layer = viewer.layers.selection.active
-        if selected_layer is None:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Warning)
-            msg.setText("Please select a mask layer before clicking Save.")
-            msg.setWindowTitle("No Layer Selected")
-            msg.exec_()
-            return
+def yezzi_energy_smooth(c_opt, lam=1e-5):
+    c_full = np.concatenate([c_opt[-3:], c_opt, c_opt[:3]])
+    spline = BSpline(t, c_full, k, extrapolate='periodic')
+    theta = np.linspace(-np.pi, np.pi, 240)
+    r = spline(theta)
+    x = np.clip(cx + r * np.cos(theta), 0, 239).astype(int)
+    y = np.clip(cy + r * np.sin(theta), 0, 239).astype(int)
 
-        selected_name = selected_layer.name
-        if not selected_name.startswith("Candidate Mask"):
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Warning)
-            msg.setText("Please select a mask layer before clicking Save.")
-            msg.setWindowTitle("No Layer Selected")
-            msg.exec_()
-            return
+    mask = np.zeros_like(array_pt, dtype=np.uint8)
+    mask[y, x] = 1
+    mask = binary_fill_holes(mask).astype(np.uint8)
 
-        # After selecting the best mask, convert it to a Napari Labels layer
-        # Get the data from the selected mask layer
-        mask_data = selected_layer.data
-        # Add as editable label layer
-        viewer.add_labels(mask_data, name="Editable Mask")
+    inside = array_pt[mask == 1]
+    outside = array_pt[mask == 0]
+    if len(inside) == 0 or len(outside) == 0:
+        return np.inf
 
-        chosen_idx = int(selected_name.split()[-1])
-        chosen_mask_path = output_paths[chosen_idx]
-        chosen_output_dir = os.path.join('interaction_phase2_output', 'user_selected')
-        os.makedirs(chosen_output_dir, exist_ok=True)
+    u, v = inside.mean(), outside.mean()
+    data_energy = ((inside - u) ** 2).sum() + ((outside - v) ** 2).sum()
+    smooth_penalty = lam * circular_second_diff_penalty(c_opt)
+    return data_energy + smooth_penalty
 
-        shutil.copy(
-            os.path.join('interaction_phase2_output', os.path.basename(chosen_mask_path)),
-            os.path.join(chosen_output_dir, os.path.basename(chosen_mask_path))
-        )
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setText(f"Chosen mask saved to {chosen_output_dir}")
-        msg.setWindowTitle("Mask Saved")
-        msg.exec_()
+# ---------- Napari UI ----------
+viewer = napari.Viewer()
+viewer.add_image(original_slice, name='Original Slice', colormap='gray', blending='additive', opacity=0.5)
+viewer.add_image(array_pt, name="CNN Mask")
 
-        # ----- CSV LOGGING -----
-        log_path = os.path.join(chosen_output_dir, "user_choices.csv")
-        fieldnames = ["slice_idx", "chosen_mask_idx", "mask_filename", "time"]
+theta_edit = np.linspace(-np.pi, np.pi, num_knots, endpoint=False)
+x_edit = cx + r_samples * np.cos(theta_edit)
+y_edit = cy + r_samples * np.sin(theta_edit)
+editable_shape = np.stack([y_edit, x_edit], axis=1)
+shape_layer = viewer.add_shapes([editable_shape], shape_type='polygon', edge_color='yellow', name="Edit Knots")
 
-        row = {
-            "slice_idx": slice_idx,
-            "chosen_mask_idx": chosen_idx,
-            "mask_filename": os.path.basename(chosen_mask_path),
-            "time": datetime.datetime.now().isoformat()
-        }
+def on_run_optimization():
+    user_shape = shape_layer.data[0]
+    dx = user_shape[:, 1] - cx
+    dy = user_shape[:, 0] - cy
+    r_user = np.sqrt(dx ** 2 + dy ** 2)
 
-        file_exists = os.path.isfile(log_path)
-        with open(log_path, mode="a", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(row)
+    res = minimize(yezzi_energy_smooth, r_user, method='L-BFGS-B')
+    c_final = np.concatenate([res.x[-3:], res.x, res.x[:3]])
+    spl_final = BSpline(t, c_final, k, extrapolate='periodic')
 
-        print(f"Logged choice to {log_path}")
+    theta_fine = np.linspace(-np.pi, np.pi, 500, endpoint=False)
+    r_fine = spl_final(theta_fine)
+    x_f = cx + r_fine * np.cos(theta_fine)
+    y_f = cy + r_fine * np.sin(theta_fine)
+    final_contour = np.stack([y_f, x_f], axis=1)
+
+    if "BEASContour" in viewer.layers:
+        viewer.layers["BEASContour"].data = [final_contour]
+    else:
+        viewer.add_shapes([final_contour], shape_type='polygon', edge_color='cyan', name="BEASContour")
     
-    def run_next_slice():
-        nonlocal slice_idx, worker, thread
-        slice_idx += 155
+    # Convert polar contour to binary mask
+    mask = np.zeros(array_pt.shape, dtype=np.uint8)
+    rr = np.clip(y_f, 0, array_pt.shape[0] - 1).astype(int)
+    cc = np.clip(x_f, 0, array_pt.shape[1] - 1).astype(int)
+    mask[rr, cc] = 1
+    filled_mask = binary_fill_holes(mask).astype(np.uint8)
 
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setText(f"Sampling for slice {slice_idx}...")
-        msg.setWindowTitle("Sampling")
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()  # Non-blocking
-        #viewer.status = f"Sampling for slice {slice_idx}..."
-
-        # Clear previous mask layers
-        for name in layer_names:
-            if name in viewer.layers:
-                viewer.layers.remove(name)
-
-        # Start background thread
-        worker = SamplingWorker(slice_idx, num_candidates, args, datal, model, diffusion)
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        # When thread starts, call worker.run
-        thread.started.connect(worker.run)
-
-        # When worker finishes, call update_viewer and clean up
-        def update_viewer(masks_new, output_paths_new, slice_id_new, original_new):
-            nonlocal masks, output_paths
-
-            masks = masks_new
-            output_paths = output_paths_new
-
-            viewer.layers["Original Slice"].data = original_new[slice_id_new]
-
-            for idx, mask in enumerate(masks):
-                layer = viewer.add_image(
-                    mask,
-                    name=f"Candidate Mask {idx}",
-                    opacity=0.15,
-                    colormap=colors[idx % len(colors)],
-                    blending="additive"
-                )
-                layer_names.append(layer.name)
-
-            #viewer.status = "Sampling completed."
-            thread.quit()
-            thread.wait()
-
-        worker.finished.connect(update_viewer)
-
-        thread.start()
-
-    instruction = QLabel("Select a mask layer and click 'Save Selected Mask' to confirm your choice.")
-    instruction.setWordWrap(True)
-    viewer.window.add_dock_widget(instruction, area="right")
-
-    # Add button to Napari
-    button = QPushButton("Save Selected Mask")
-    button.clicked.connect(save_selected_mask)
-    viewer.window.add_dock_widget(button, area="right")
-
-    # Add Next Slice button
-    next_button = QPushButton("Next Slice")
-    next_button.clicked.connect(run_next_slice)
-    viewer.window.add_dock_widget(next_button, area="right")
+    # Save to NIfTI format
+    affine = np.eye(4)  # Or replace with affine from original NIfTI image
+    seg_nifti = nib.Nifti1Image(filled_mask, affine=affine)
+    nib.save(seg_nifti, "BraTS-GLI-00001-000-t2w_slice80-seg.nii.gz")
 
 
-    napari.run()
-
-
-if __name__ == "__main__":
-    slice_idx = input("Enter slice index: ")
-    main(slice_idx)
+button = QPushButton("Reoptimize BEAS")
+button.clicked.connect(on_run_optimization)
+viewer.window.add_dock_widget(button, area='right')
+napari.run()

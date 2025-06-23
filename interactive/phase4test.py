@@ -20,12 +20,14 @@ original_slice = (original_slice - original_slice.min()) / (original_slice.max()
 # Load probability map
 # ------------------
 data_pt = torch.load("../BraTS-GLI-00001-000-t2w_slice80.nii_0_output_ens.pt", map_location="cpu")
+
 array_pt = data_pt.numpy() if isinstance(data_pt, torch.Tensor) else np.array(data_pt)
+print(array_pt.shape, array_pt.min(), array_pt.max())
 if array_pt.ndim == 3 and array_pt.shape[0] == 1:
     array_pt = array_pt[0]
 array_pt = skimage.transform.resize(array_pt, (240, 240), preserve_range=True, anti_aliasing=True)
 array_pt = (array_pt - array_pt.min()) / (array_pt.max() - array_pt.min())
-
+print("array_pt shape/min/max:", array_pt.shape, array_pt.min(), array_pt.max())
 # Initial mask (placeholder, can be from BEAS)
 initial_mask = morphology.remove_small_objects(array_pt > 0.13, min_size=200).astype(np.uint8)
 
@@ -82,7 +84,7 @@ viewer.add_labels(initial_mask, name='Initial Graphcut Mask')
 viewer.add_labels(np.zeros_like(initial_mask, dtype=np.uint8), name='User Labels')  # 1: FG, 2: BG
 
 # Add button to Napari
-save_btn = QPushButton("Save Annotations & Run GraphCut")
+save_btn = QPushButton("Save Annotations and Run GraphCut")
 save_btn.clicked.connect(on_save_clicked)
 viewer.window.add_dock_widget(save_btn, area='right')
 
