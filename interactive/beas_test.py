@@ -15,7 +15,7 @@ import os
 from skimage.morphology import binary_erosion, disk
 
 # Load the corresponding original T2w slice (adjust path accordingly)
-nii = nib.load("BraTS-GLI-00001-000-t2w.nii.gz")
+nii = nib.load("../BraTS-GLI-00001-000-t2w.nii.gz")
 original_volume = nii.get_fdata()
 original_volume = np.moveaxis(original_volume, -1, 0)  # (H, W, D) → (D, H, W)
 original_slice = skimage.transform.resize(original_volume[80], (240, 240), preserve_range=True, anti_aliasing=True)
@@ -23,7 +23,7 @@ original_slice = (original_slice - original_slice.min()) / (original_slice.max()
 
 
 # ---------- Load and preprocess data ----------
-data_pt = torch.load("BraTS-GLI-00001-000-t2w_slice80.nii_0_output_ens.pt", map_location="cpu")
+data_pt = torch.load("../BraTS-GLI-00001-000-t2w_slice80.nii_0_output_ens.pt", map_location="cpu")
 array_pt = data_pt.numpy() if isinstance(data_pt, torch.Tensor) else np.array(data_pt)
 if array_pt.ndim == 3 and array_pt.shape[0] == 1:
     array_pt = array_pt[0]
@@ -39,31 +39,18 @@ mask = morphology.remove_small_objects(cleaned, min_size=200)
 cy, cx = center_of_mass(mask)
 
 # Get raw contour
-# contour = find_contours(mask, 0.5)[0]
-# angles = np.arctan2(contour[:, 0] - cy, contour[:, 1] - cx)
-# radii = np.sqrt((contour[:, 0] - cy) ** 2 + (contour[:, 1] - cx) ** 2)
-
 contour = find_contours(mask, 0.5)[0]
-if not np.allclose(contour[0], contour[-1]):
-    contour = np.vstack([contour, contour[0]])
+angles = np.arctan2(contour[:, 0] - cy, contour[:, 1] - cx)
+radii = np.sqrt((contour[:, 0] - cy) ** 2 + (contour[:, 1] - cx) ** 2)
 
-dx = contour[:, 1] - cx
-dy = contour[:, 0] - cy
-angles = np.arctan2(dy, dx)
-angles = np.unwrap(angles)  # 避免跨越 π 跳跃
-radii = np.sqrt(dx**2 + dy**2)
-
-# sorted_idx = np.argsort(angles)
-# angles_sorted = angles[sorted_idx]
-# radii_sorted = radii[sorted_idx]
+sorted_idx = np.argsort(angles)
+angles_sorted = angles[sorted_idx]
+radii_sorted = radii[sorted_idx]
 
 # B-spline setup
-num_knots = 30
-# theta_knots = np.linspace(-np.pi, np.pi, num_knots, endpoint=False)
-# r_samples = np.interp(theta_knots, angles_sorted, radii_sorted)
-# 插值构造初始样条点
-theta_knots = np.linspace(angles.min(), angles.max(), num_knots, endpoint=False)
-r_samples = np.interp(theta_knots, angles, radii)
+num_knots = 40
+theta_knots = np.linspace(-np.pi, np.pi, num_knots, endpoint=False)
+r_samples = np.interp(theta_knots, angles_sorted, radii_sorted)
 r_ext = np.concatenate([r_samples[-3:], r_samples, r_samples[:3]])
 t = np.concatenate([theta_knots[-3:] - 2 * np.pi, theta_knots, theta_knots[:3] + 2 * np.pi])
 k = 3

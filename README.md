@@ -19,20 +19,48 @@ A short demo of the interactive segmentation pipeline:
 
 ▶️ [Click here to watch the demo (MP4)](./demo/your_demo_video.mp4)
 
+---
+## How to Run
+
+Due to GitHub's file size limits, the pretrained diffusion model used for mask generation is not included in this repository. As such, running the sampling pipeline end-to-end is not directly supported unless you retrain the model yourself.
+
+However, we provide a sample segmentation result for testing purposes. You can still test and interact with the BEAS and Graph Cut refinement modules independently:
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/yourusername/interactive-medseg-diffusion.git
+cd interactive-medseg-diffusion
+
+
+### 2. Install the required dependencies
+```bash
+pip install -r requirements.txt
+
+
+### 3. Navigate to the interactive folder
+```bash
+cd interactive
+
+
+### 4. Run BEAS refinement demo
+```bash
+python beas_test.py
+
+### 5. Run Graph Cut refinement demo
+```bash
+python graphcut_test.py
+
+These scripts will load a test segmentation mask and launch the Napari GUI for interactive refinement.
+
 ## Installation
 
 **Dependencies:**
 
-- Python ≥ 3.8
-- PyTorch ≥ 1.12
-- Napari
-- NumPy, SciPy, scikit-image
-- [maxflow](https://github.com/pmneila/PyMaxflow)
-- OpenCV
-
-**Clone and set up:**
-
-```bash
-git clone https://github.com/yourusername/interactive-medseg-diffusion.git
-cd interactive-medseg-diffusion
-pip install -r requirements.txt
+- Python ≥ 3.8  
+- PyTorch ≥ 1.12  
+- Napari  
+- NumPy  
+- SciPy  
+- scikit-image  
+- [maxflow](https://github.com/pmneila/PyMaxflow)  
+- OpenCV  
