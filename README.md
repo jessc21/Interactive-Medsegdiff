@@ -27,29 +27,22 @@ Due to GitHub's file size limits, the pretrained diffusion model used for mask g
 However, we provide a sample segmentation result for testing purposes. You can still test and interact with the BEAS and Graph Cut refinement modules independently:
 
 ### 1. Clone the repository
-```
-bash
+```bash
 git clone https://github.com/yourusername/interactive-medseg-diffusion.git
 cd interactive-medseg-diffusion
 ```
 
 ### 2. Install the required dependencies
-```pip install -r requirements.txt```
+```bash pip install -r requirements.txt```
 
 ### 3. Navigate to the interactive folder
-```
-cd interactive
-```
+```bash cd interactive```
 
 ### 4. Run BEAS refinement demo
-```
-python beas_test.py
-```
+```bash python beas_test.py```
 
 ### 5. Run Graph Cut refinement demo
-```
-python graphcut_test.py
-```
+```bash python graphcut_test.py```
 
 These scripts will load a test segmentation mask and launch the Napari GUI for interactive refinement.
 
