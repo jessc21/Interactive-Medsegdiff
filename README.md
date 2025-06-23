@@ -17,7 +17,7 @@ This project presents an interactive segmentation pipeline for medical images, c
 
 A short demo of the interactive segmentation pipeline:
 
-▶️ [Click here to watch the demo (MP4)](./demo/your_demo_video.mp4)
+▶️ [Click here to watch the demo (MP4)](./demo/Yiru_FYP_demo.mp4)
 
 ---
 ## How to Run
