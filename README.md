@@ -33,16 +33,24 @@ cd interactive-medseg-diffusion
 ```
 
 ### 2. Install the required dependencies
-```bash pip install -r requirements.txt```
+```bash 
+pip install -r requirements.txt
+```
 
 ### 3. Navigate to the interactive folder
-```bash cd interactive```
+```bash 
+cd interactive
+```
 
 ### 4. Run BEAS refinement demo
-```bash python beas_test.py```
+```bash 
+python beas_test.py
+```
 
 ### 5. Run Graph Cut refinement demo
-```bash python graphcut_test.py```
+```bash 
+python graphcut_test.py
+```
 
 These scripts will load a test segmentation mask and launch the Napari GUI for interactive refinement.
 
